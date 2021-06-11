@@ -1,3 +1,6 @@
+
+from prometheus_client import Histogram
+
 def format_metric(text: str):
     return text.replace('.', '_')
 
@@ -12,3 +15,7 @@ def try_or_else(op, default):
     except:
         return default
 
+requestHistogram = Histogram(
+    'cloudmonitor_request', 'CloudMonitor request latency', ['namespace', 'limiter'],
+    buckets=(.1, .25, .5, .75, 1, 2.5, float('inf'))
+)

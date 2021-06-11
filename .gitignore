@@ -108,4 +108,8 @@ venv.bak/
 .mypy_cache/
 .idea/
 
+# local test file
 aliyun-exporter-test.yml
+
+# vscode
+.vscode/

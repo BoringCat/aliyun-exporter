@@ -1,3 +1,7 @@
+pool_size: 4
+rate_limit: 2
+rate_period: 0.2
+protocol_type: https
 credential:
   access_key_id: <YOUR_ACCESS_KEY_ID>
   access_key_secret: <YOUR_ACCESS_KEY_SECRET>
@@ -15,4 +19,6 @@ info_metrics:
   - rds
   - redis
   - slb
+  - elasticsearch
+  - logstash
   - mongodb

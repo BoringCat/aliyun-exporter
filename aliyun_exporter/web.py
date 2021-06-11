@@ -5,7 +5,7 @@ from flask import (
     Flask, render_template
 )
 from prometheus_client import make_wsgi_app
-from werkzeug.wsgi import DispatcherMiddleware
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 from aliyun_exporter import CollectorConfig
 from aliyun_exporter.QueryMetricMetaRequest import QueryMetricMetaRequest
@@ -19,8 +19,8 @@ def create_app(config: CollectorConfig):
 
     client = AcsClient(
         ak=config.credential['access_key_id'],
-        secret=config.credential['access_key_secret'],
-        region_id=config.credential['region_id']
+        secret=config.credential['access_key_secret']
+        # region_id=tuple(filter(len, config.credential['region_ids']))[0]
     )
 
     @app.route("/")

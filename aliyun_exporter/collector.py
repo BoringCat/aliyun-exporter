@@ -4,44 +4,48 @@ import time
 import os
 
 from datetime import datetime, timedelta
-from prometheus_client import Summary
-from prometheus_client.core import GaugeMetricFamily, REGISTRY
+from prometheus_client.core import GaugeMetricFamily
 from aliyunsdkcore.client import AcsClient
-from aliyunsdkcms.request.v20180308 import QueryMetricLastRequest
+from aliyunsdkcms.request.v20190101 import DescribeMetricLastRequest
 from aliyunsdkrds.request.v20140815 import DescribeDBInstancePerformanceRequest
-from ratelimiter import RateLimiter
+from ratelimit import limits, sleep_and_retry
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from aliyun_exporter.info_provider import InfoProvider
-from aliyun_exporter.utils import try_or_else
+from aliyun_exporter.utils import try_or_else, requestHistogram
 
 rds_performance = 'rds_performance'
-special_projects = {
+special_namespaces = {
     rds_performance: lambda collector : RDSPerformanceCollector(collector),
 }
 
-requestSummary = Summary('cloudmonitor_request_latency_seconds', 'CloudMonitor request latency', ['project'])
-requestFailedSummary = Summary('cloudmonitor_failed_request_latency_seconds', 'CloudMonitor failed request latency', ['project'])
-
 class CollectorConfig(object):
     def __init__(self,
-                 pool_size=10,
+                 pool_size=None,
                  rate_limit=10,
+                 rate_period=1,
                  credential=None,
                  metrics=None,
                  info_metrics=None,
+                 protocol_type='http'
                  ):
         # if metrics is None:
         # raise Exception('Metrics config must be set.')
 
         self.credential = credential
         self.metrics = metrics
+        self.pool_size = pool_size or rate_limit
         self.rate_limit = rate_limit
+        self.rate_period = rate_period
         self.info_metrics = info_metrics
+        self.protocol_type = protocol_type
 
         # ENV
         access_id = os.environ.get('ALIYUN_ACCESS_ID')
         access_secret = os.environ.get('ALIYUN_ACCESS_SECRET')
         region = os.environ.get('ALIYUN_REGION')
+        protocol_type = os.environ.get('PROTOCOL_TYPE')
         if self.credential is None:
             self.credential = {}
         if access_id is not None and len(access_id) > 0:
@@ -49,58 +53,69 @@ class CollectorConfig(object):
         if access_secret is not None and len(access_secret) > 0:
             self.credential['access_key_secret'] = access_secret
         if region is not None and len(region) > 0:
-            self.credential['region_id'] = region
+            self.credential['region_ids'] = [ region ]
         if self.credential['access_key_id'] is None or \
                 self.credential['access_key_secret'] is None:
             raise Exception('Credential is not fully configured.')
+        if protocol_type is not None:
+            self.protocol_type = protocol_type
 
 class AliyunCollector(object):
     def __init__(self, config: CollectorConfig):
-        self.metrics = config.metrics
+        self.metrics = config.metrics or {}
         self.info_metrics = config.info_metrics
-        self.client = AcsClient(
-            ak=config.credential['access_key_id'],
-            secret=config.credential['access_key_secret'],
-            region_id=config.credential['region_id']
-        )
-        self.rateLimiter = RateLimiter(max_calls=config.rate_limit)
-        self.info_provider = InfoProvider(self.client)
+        self.client = None
+        self.info_providers = {}
+        for region_id in config.credential['region_ids']:
+            client = AcsClient(
+                ak=config.credential['access_key_id'],
+                secret=config.credential['access_key_secret'],
+                region_id=region_id
+            )
+            self.info_providers[region_id] = InfoProvider(client, config.protocol_type)
+            if not self.client:
+                self.client = client
+        self.limiter = limits(calls=config.rate_limit, period=config.rate_period)
         self.special_collectors = dict()
-        for k, v in special_projects.items():
+        self.pool = ThreadPoolExecutor(max_workers=config.pool_size)
+        for k, v in special_namespaces.items():
             if k in self.metrics:
                 self.special_collectors[k] = v(self)
 
-
-    def query_metric(self, project: str, metric: str, period: int):
-        with self.rateLimiter:
-            req = QueryMetricLastRequest.QueryMetricLastRequest()
-            req.set_Project(project)
-            req.set_Metric(metric)
-            req.set_Period(period)
-            start_time = time.time()
-            try:
-                resp = self.client.do_action_with_exception(req)
-            except Exception as e:
-                logging.error('Error request cloud monitor api', exc_info=e)
-                requestFailedSummary.labels(project).observe(time.time() - start_time)
-                return []
-            else:
-                requestSummary.labels(project).observe(time.time() - start_time)
+    def query_metric(self, namespace: str, metric: str, period: int):
+        histogram = requestHistogram.labels(namespace, False)
+        limithistogram = requestHistogram.labels(namespace, True)
+        @limithistogram.time()  # 限速后的请求时间
+        @sleep_and_retry        # 等待并重试
+        @self.limiter           # 限速
+        @histogram.time()       # 真实请求时间
+        def _fetch_metric(req):
+            return self.client.do_action_with_exception(req)
+        req = DescribeMetricLastRequest.DescribeMetricLastRequest()
+        req.set_Namespace(namespace)
+        req.set_MetricName(metric)
+        req.set_Period(period)
+        # start_time = time.time()
+        try:
+            resp = _fetch_metric(req)
+        except Exception as e:
+            logging.error('Error request cloud monitor api', exc_info=e)
+            return []
         data = json.loads(resp)
         if 'Datapoints' in data:
             points = json.loads(data['Datapoints'])
             return points
         else:
-            logging.error('Error query metrics for {}_{}, the response body don not have Datapoints field, please check you permission or workload' .format(project, metric))
-            return points
+            logging.error('Error query metrics for {}_{}, the response body don not have Datapoints field, please check you permission or workload' .format(namespace, metric))
+            return []
 
     def parse_label_keys(self, point):
-        return [k for k in point if k not in ['timestamp', 'Maximum', 'Minimum', 'Average']]
+        return [k for k in point if k not in ['timestamp', 'Maximum', 'Minimum', 'Average', 'Value', 'userId']]
 
-    def format_metric_name(self, project, name):
-        return 'aliyun_{}_{}'.format(project, name)
+    def format_metric_name(self, namespace, name):
+        return 'aliyun_{}_{}'.format(namespace, name)
 
-    def metric_generator(self, project, metric):
+    def metric_generator(self, namespace, metric):
         if 'name' not in metric:
             raise Exception('name must be set in metric item.')
         name = metric['name']
@@ -115,33 +130,48 @@ class AliyunCollector(object):
             measure = metric['measure']
 
         try:
-            points = self.query_metric(project, metric_name, period)
+            points = self.query_metric(namespace, metric_name, period)
         except Exception as e:
-            logging.error('Error query metrics for {}_{}'.format(project, metric_name), exc_info=e)
-            yield metric_up_gauge(self.format_metric_name(project, name), False)
-            return
+            logging.error('Error query metrics for {}_{}'.format(namespace, metric_name), exc_info=e)
+            return (metric_up_gauge(self.format_metric_name(namespace, name), False),)
         if len(points) < 1:
-            yield metric_up_gauge(self.format_metric_name(project, name), False)
-            return
+            return (metric_up_gauge(self.format_metric_name(namespace, name), False),)
         label_keys = self.parse_label_keys(points[0])
-        gauge = GaugeMetricFamily(self.format_metric_name(project, name), '', labels=label_keys)
+        gauge = GaugeMetricFamily(self.format_metric_name(namespace, name), '', labels=label_keys)
         for point in points:
-            gauge.add_metric([try_or_else(lambda: str(point[k]), '') for k in label_keys], point[measure])
-        yield gauge
-        yield metric_up_gauge(self.format_metric_name(project, name), True)
+            if measure not in point:
+                raise KeyError('Measure %s is not in datapoint %s_%s. Which have keys: [%s]' % (measure, namespace, name, ', '.join(point.keys())))
+            timestamp = point.get('timestamp', None)
+            if isinstance(timestamp, (int, float)):
+                timestamp = timestamp / 1000
+            gauge.add_metric([try_or_else(lambda: str(point[k]), '') for k in label_keys], point[measure], timestamp=timestamp)
+        return (gauge, metric_up_gauge(self.format_metric_name(namespace, name), True))
 
     def collect(self):
-        for project in self.metrics:
-            if project in special_projects:
+        futures = []
+        info_futures = []
+        for namespace in self.metrics:
+            if namespace in special_namespaces:
+                futures.append(self.pool.submit(self.special_collectors[namespace].collect))
                 continue
-            for metric in self.metrics[project]:
-                yield from self.metric_generator(project, metric)
+            for metric in self.metrics[namespace]:
+                futures.append(self.pool.submit(self.metric_generator, namespace, metric))
         if self.info_metrics != None:
             for resource in self.info_metrics:
-                yield self.info_provider.get_metrics(resource)
-        for v in self.special_collectors.values():
-            yield from v.collect()
-
+                for info_provider in self.info_providers.values():
+                    info_futures.append(self.pool.submit(info_provider.get_metrics, resource))
+        for future in as_completed(futures):
+            yield from future.result()
+        infos = {}
+        for future in as_completed(info_futures):
+            d = future.result()
+            if not d['labels']:
+                continue
+            i = infos.get(d['name'],GaugeMetricFamily(d['name'], d['desc'], labels=d['labels']))
+            for info in d['infos']:
+                i.add_metric(info, 1)
+            infos[d['name']] = i
+        yield from infos.values()
 
 
 def metric_up_gauge(resource: str, succeeded=True):
