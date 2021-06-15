@@ -10,7 +10,7 @@ import aliyunsdkslb.request.v20140515.DescribeLoadBalancersRequest as DescribeSL
 import aliyunsdkdds.request.v20151201.DescribeDBInstancesRequest as Mongodb
 from aliyunsdkcore.request import CommonRequest
 
-from aliyun_exporter.utils import try_or_else, requestHistogram
+from .utils import try_or_else, requestHistogram
 
 ecsInfoHistogram = requestHistogram.labels('ecs_info', False)
 rdsInfoHistogram = requestHistogram.labels('rds_info', False)

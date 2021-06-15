@@ -1,5 +1,4 @@
 import argparse
-from wsgiref.simple_server import make_server
 
 import yaml
 import logging
@@ -9,9 +8,9 @@ import time
 
 from prometheus_client.core import REGISTRY
 
-from aliyun_exporter.collector import AliyunCollector, CollectorConfig
-from aliyun_exporter.web import create_app
-
+from .collector import AliyunCollector, CollectorConfig
+from .web import create_app
+from .utils import createHttpServer
 
 def shutdown():
     logging.info('Shutting down, see you next time!')
@@ -27,10 +26,12 @@ def main():
     parser = argparse.ArgumentParser(description="Aliyun CloudMonitor exporter for Prometheus.")
     parser.add_argument('-c', '--config-file', default='aliyun-exporter.yml',
                        help='path to configuration file.')
-    parser.add_argument('-h', '--host', default="",
+    parser.add_argument('-H', '--host', default=[], action='append',
                         help='exporter exposed host(default: "")')
-    parser.add_argument('-p', '--port', default=9525,
+    parser.add_argument('-p', '--port', default=[], action='append',
                         help='exporter exposed port(default: 9525)')
+    parser.add_argument('-d', '--debug', default=False, action='store_true',
+                        help='run exporter in debug mode')
     args = parser.parse_args()
 
     with open(args.config_file, 'r') as config_file:
@@ -42,13 +43,17 @@ def main():
 
     app = create_app(collector_config)
 
-    logging.info("Start exporter, listen on {}".format(int(args.port)))
-    httpd = make_server('', int(args.port), app)
-    httpd.serve_forever()
+    if not args.host:
+        hosts = ['']
+    else:
+        hosts = args.host
+    if not args.port:
+        ports = [9525]
+    else:
+        ports = args.port
 
     try:
-        while True:
-            time.sleep(5)
+        createHttpServer(hosts, ports, app, args.debug)
     except KeyboardInterrupt:
         pass
 

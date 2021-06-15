@@ -7,10 +7,10 @@ from flask import (
 from prometheus_client import make_wsgi_app
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
-from aliyun_exporter import CollectorConfig
-from aliyun_exporter.QueryMetricMetaRequest import QueryMetricMetaRequest
-from aliyun_exporter.QueryProjectMetaRequest import QueryProjectMetaRequest
-from aliyun_exporter.utils import format_metric, format_period
+from . import CollectorConfig
+from .QueryMetricMetaRequest import QueryMetricMetaRequest
+from .QueryProjectMetaRequest import QueryProjectMetaRequest
+from .utils import format_metric, format_period
 
 
 def create_app(config: CollectorConfig):

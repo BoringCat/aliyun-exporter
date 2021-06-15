@@ -13,8 +13,8 @@ from ratelimit import limits, sleep_and_retry
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from aliyun_exporter.info_provider import InfoProvider
-from aliyun_exporter.utils import try_or_else, requestHistogram
+from .info_provider import InfoProvider
+from .utils import try_or_else, requestHistogram
 
 rds_performance = 'rds_performance'
 special_namespaces = {

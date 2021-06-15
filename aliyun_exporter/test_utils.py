@@ -1,4 +1,4 @@
-from aliyun_exporter.utils import format_metric, format_period
+from .utils import format_metric, format_period
 
 def test_format_metric():
     assert format_metric("") == ""

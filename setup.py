@@ -36,6 +36,7 @@ setup(
         'ratelimit',
         'flask>1',
         'cachetools',
+        'tornado',
         'aliyun-python-sdk-ecs==4.24.2',
         'aliyun-python-sdk-rds==2.5.11',
         'aliyun-python-sdk-r-kvstore==2.18.1',
