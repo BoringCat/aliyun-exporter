@@ -61,7 +61,8 @@ def create_app(config: CollectorConfig):
     app.jinja_env.filters['formatmetric'] = format_metric
     app.jinja_env.filters['formatperiod'] = format_period
 
-    app_dispatch = DispatcherMiddleware(app, {
+    app.wsgi_app = DispatcherMiddleware(app, {
         '/metrics': make_wsgi_app()
     })
-    return app_dispatch
+
+    return app

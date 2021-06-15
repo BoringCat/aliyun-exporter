@@ -5,7 +5,7 @@ import os
 
 from datetime import datetime, timedelta
 from cachetools import cached, TTLCache
-from prometheus_client.core import GaugeMetricFamily
+from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
 from aliyunsdkcore.client import AcsClient
 from aliyunsdkcms.request.v20190101 import DescribeMetricLastRequest
 from aliyunsdkrds.request.v20140815 import DescribeDBInstancePerformanceRequest
@@ -196,9 +196,9 @@ class AliyunCollector(object):
             d = future.result()
             if not d['labels']:
                 continue
-            i = infos.get(d['name'],GaugeMetricFamily(d['name'], d['desc'], labels=d['labels']))
+            i = infos.get(d['name'],InfoMetricFamily(d['name'], d['desc'], labels=d['labels']))
             for info in d['infos']:
-                i.add_metric(info, 1)
+                i.add_metric([], info)
             infos[d['name']] = i
         yield from infos.values()
 

@@ -79,27 +79,27 @@ class InfoProvider():
             'PublicIpAddress': lambda obj : try_or_else(lambda : obj['IpAddress'][0], ''),
             'VpcAttributes': lambda obj : try_or_else(lambda : obj['PrivateIpAddress']['IpAddress'][0], ''),
         }
-        return self.info_template(req, 'aliyun_meta_ecs_info', nested_handler=nested_handler)
+        return self.info_template(req, 'aliyun_meta_ecs', nested_handler=nested_handler)
 
     @rdsInfoHistogram.time()
     def rds_info(self) -> dict:
         req = DescribeRDS.DescribeDBInstancesRequest()
-        return self.info_template(req, 'aliyun_meta_rds_info', to_list=lambda data: data['Items']['DBInstance'])
+        return self.info_template(req, 'aliyun_meta_rds', to_list=lambda data: data['Items']['DBInstance'])
 
     @redisInfoHistogram.time()
     def redis_info(self) -> dict:
         req = DescribeRedis.DescribeInstancesRequest()
-        return self.info_template(req, 'aliyun_meta_redis_info', to_list=lambda data: data['Instances']['KVStoreInstance'])
+        return self.info_template(req, 'aliyun_meta_redis', to_list=lambda data: data['Instances']['KVStoreInstance'])
 
     @slbInfoHistogram.time()
     def slb_info(self) -> dict:
         req = DescribeSLB.DescribeLoadBalancersRequest()
-        return self.info_template(req, 'aliyun_meta_slb_info', to_list=lambda data: data['LoadBalancers']['LoadBalancer'])
+        return self.info_template(req, 'aliyun_meta_slb', to_list=lambda data: data['LoadBalancers']['LoadBalancer'])
 
     @mongodbInfoHistogram.time()
     def mongodb_info(self) -> dict:
         req = Mongodb.DescribeDBInstancesRequest()
-        return self.info_template(req, 'aliyun_meta_mongodb_info', to_list=lambda data: data['DBInstances']['DBInstance'])
+        return self.info_template(req, 'aliyun_meta_mongodb', to_list=lambda data: data['DBInstances']['DBInstance'])
 
     @elasticsearchInfoHistogram.time()
     def elasticsearch_info(self) -> dict:
@@ -112,7 +112,7 @@ class InfoProvider():
         req.set_domain('elasticsearch.%s.aliyuncs.com' % self.client.get_region_id())
         body = '''{}'''
         req.set_content(body.encode('utf-8'))
-        return self.info_template(req, 'aliyun_meta_elasticsearch_info', to_list=lambda data: data['Result'])
+        return self.info_template(req, 'aliyun_meta_elasticsearch', to_list=lambda data: data['Result'])
 
     @logstashInfoHistogram.time()
     def logstash_info(self) -> dict:
