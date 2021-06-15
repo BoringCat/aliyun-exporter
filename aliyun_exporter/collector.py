@@ -4,6 +4,7 @@ import time
 import os
 
 from datetime import datetime, timedelta
+from cachetools import cached, TTLCache
 from prometheus_client.core import GaugeMetricFamily
 from aliyunsdkcore.client import AcsClient
 from aliyunsdkcms.request.v20190101 import DescribeMetricLastRequest
@@ -25,6 +26,7 @@ class CollectorConfig(object):
                  pool_size=None,
                  rate_limit=10,
                  rate_period=1,
+                 cache_metrics=True,
                  credential=None,
                  metrics=None,
                  info_metrics=None,
@@ -38,6 +40,7 @@ class CollectorConfig(object):
         self.pool_size = pool_size or rate_limit
         self.rate_limit = rate_limit
         self.rate_period = rate_period
+        self.cache_metrics = cache_metrics
         self.info_metrics = info_metrics
         self.protocol_type = protocol_type
 
@@ -46,6 +49,7 @@ class CollectorConfig(object):
         access_secret = os.environ.get('ALIYUN_ACCESS_SECRET')
         region = os.environ.get('ALIYUN_REGION')
         protocol_type = os.environ.get('PROTOCOL_TYPE')
+        cache_metrics = os.environ.get('CACHE_METRICS')
         if self.credential is None:
             self.credential = {}
         if access_id is not None and len(access_id) > 0:
@@ -59,6 +63,8 @@ class CollectorConfig(object):
             raise Exception('Credential is not fully configured.')
         if protocol_type is not None:
             self.protocol_type = protocol_type
+        if cache_metrics is not None:
+            self.cache_metrics = cache_metrics
 
 class AliyunCollector(object):
     def __init__(self, config: CollectorConfig):
@@ -81,10 +87,20 @@ class AliyunCollector(object):
         for k, v in special_namespaces.items():
             if k in self.metrics:
                 self.special_collectors[k] = v(self)
+        self.cache_metrics = config.cache_metrics
+        self.cache_metric_func = {}
+
+    def _create_cache_method(self, namespace:str, maxsize:int = 3600, period:int = 60):
+        @cached(cache=TTLCache(maxsize=maxsize, ttl=max(5, period - 10)))
+        def cache_metric(*args, **kwargs):
+            return self.query_metric(*args, **kwargs)
+        self.cache_metric_func[namespace] = cache_metric
+        return cache_metric
 
     def query_metric(self, namespace: str, metric: str, period: int):
         histogram = requestHistogram.labels(namespace, False)
         limithistogram = requestHistogram.labels(namespace, True)
+        
         @limithistogram.time()  # 限速后的请求时间
         @sleep_and_retry        # 等待并重试
         @self.limiter           # 限速
@@ -129,8 +145,11 @@ class AliyunCollector(object):
         if 'measure' in metric:
             measure = metric['measure']
 
+        func = self.cache_metric_func.get(namespace, None if self.cache_metrics else self.query_metric)
+        if not callable(func) and self.cache_metrics:
+            func = self._create_cache_method(namespace, period=period)
         try:
-            points = self.query_metric(namespace, metric_name, period)
+            points = func(namespace, metric_name, period)
         except Exception as e:
             logging.error('Error query metrics for {}_{}'.format(namespace, metric_name), exc_info=e)
             return (metric_up_gauge(self.format_metric_name(namespace, name), False),)

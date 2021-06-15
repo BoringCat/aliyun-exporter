@@ -50,6 +50,7 @@ pip3 install .
 ```yaml
 rate_limit: 10
 pool_size: 10
+cache_metrics: yes
 protocol_type: https
 credential:
   access_key_id: <YOUR_ACCESS_KEY_ID>
@@ -94,8 +95,11 @@ docker run -p 9525:9525 -v $(pwd)/aliyun-exporter.yml:$(pwd)/aliyun-exporter.yml
 ## 配置
 
 ```yaml
-rate_limit: 5 # 限流配置，每秒请求次数. 默认值: 10
 pool_size: 10 # 并发线程池配置. (所有请求共用) 默认值: 10
+rate_limit: 5 # 限流配置，每秒请求次数. 默认值: 10
+rate_period: 1 # 并发限制间隔
+cache_metrics: yes # 是否缓存API结果
+protocol_type: https # 请求协议（内网建议http）
 credential:
   access_key_id: <YOUR_ACCESS_KEY_ID> # 必填
   access_key_secret: <YOUR_ACCESS_KEY_SECRET> # 必填

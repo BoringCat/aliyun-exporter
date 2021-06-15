@@ -1,6 +1,7 @@
 pool_size: 4
 rate_limit: 2
 rate_period: 0.2
+cache_metrics: yes
 protocol_type: https
 credential:
   access_key_id: <YOUR_ACCESS_KEY_ID>

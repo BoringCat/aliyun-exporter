@@ -20,7 +20,7 @@ mongodbInfoHistogram = requestHistogram.labels('mongodb_info', False)
 elasticsearchInfoHistogram = requestHistogram.labels('elasticsearch_info', False)
 logstashInfoHistogram = requestHistogram.labels('logstash_info', False)
 
-cache = TTLCache(maxsize=100, ttl=3600)
+cache = TTLCache(maxsize=1000, ttl=3600)
 
 class OpenAPIAddPageRequest(CommonRequest):
     def __init__(self, domain=None, version=None, action_name=None, uri_pattern=None, product=None,
