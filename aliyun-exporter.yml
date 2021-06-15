@@ -6,7 +6,7 @@ protocol_type: https
 credential:
   access_key_id: <YOUR_ACCESS_KEY_ID>
   access_key_secret: <YOUR_ACCESS_KEY_SECRET>
-  region_id: <REGION_ID>
+  entrypoint: <REGION_ID>
 
 metrics:
   acs_cdn:
@@ -16,10 +16,14 @@ metrics:
     period: 300
 
 info_metrics:
-  - ecs
-  - rds
-  - redis
-  - slb
-  - elasticsearch
-  - logstash
-  - mongodb
+  ecs:
+    region_ids:
+      - <REGION_ID1>
+      - <REGION_ID2>
+      - <REGION_ID3>
+  rds:
+  redis:
+  slb:
+  elasticsearch:
+  logstash:
+  mongodb:

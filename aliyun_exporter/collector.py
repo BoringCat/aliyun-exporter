@@ -47,7 +47,7 @@ class CollectorConfig(object):
         # ENV
         access_id = os.environ.get('ALIYUN_ACCESS_ID')
         access_secret = os.environ.get('ALIYUN_ACCESS_SECRET')
-        region = os.environ.get('ALIYUN_REGION')
+        entrypoint = os.environ.get('ALIYUN_ENTRYPOINT')
         protocol_type = os.environ.get('PROTOCOL_TYPE')
         cache_metrics = os.environ.get('CACHE_METRICS')
         if self.credential is None:
@@ -56,8 +56,8 @@ class CollectorConfig(object):
             self.credential['access_key_id'] = access_id
         if access_secret is not None and len(access_secret) > 0:
             self.credential['access_key_secret'] = access_secret
-        if region is not None and len(region) > 0:
-            self.credential['region_ids'] = [ region ]
+        if entrypoint is not None and len(entrypoint) > 0:
+            self.credential['entrypoint'] = entrypoint
         if self.credential['access_key_id'] is None or \
                 self.credential['access_key_secret'] is None:
             raise Exception('Credential is not fully configured.')
@@ -71,16 +71,25 @@ class AliyunCollector(object):
         self.metrics = config.metrics or {}
         self.info_metrics = config.info_metrics
         self.client = None
+        self.entrypoint = config.credential.get('entrypoint', 'cn-hangzhou')
         self.info_providers = {}
-        for region_id in config.credential['region_ids']:
-            client = AcsClient(
-                ak=config.credential['access_key_id'],
-                secret=config.credential['access_key_secret'],
-                region_id=region_id
-            )
-            self.info_providers[region_id] = InfoProvider(client, config.protocol_type)
-            if not self.client:
-                self.client = client
+        self.client = AcsClient(
+            ak=config.credential['access_key_id'],
+            secret=config.credential['access_key_secret'],
+            region_id=self.entrypoint
+        )
+        for info, d in self.info_metrics.items():
+            for region_id in d.get('region_ids', [self.entrypoint]):
+                if region_id in self.info_providers:
+                    client = self.info_providers[region_id]
+                else:
+                    client = InfoProvider(AcsClient(
+                        ak=config.credential['access_key_id'],
+                        secret=config.credential['access_key_secret'],
+                        region_id=region_id
+                    ), config.protocol_type)
+                    self.info_providers[region_id] = client
+                client.append_info(info)
         self.limiter = limits(calls=config.rate_limit, period=config.rate_period)
         self.special_collectors = dict()
         self.pool = ThreadPoolExecutor(max_workers=config.pool_size)
@@ -176,9 +185,10 @@ class AliyunCollector(object):
             for metric in self.metrics[namespace]:
                 futures.append(self.pool.submit(self.metric_generator, namespace, metric))
         if self.info_metrics != None:
-            for resource in self.info_metrics:
+            for resource in self.info_metrics.keys():
                 for info_provider in self.info_providers.values():
-                    info_futures.append(self.pool.submit(info_provider.get_metrics, resource))
+                    if info_provider.has(resource):
+                        info_futures.append(self.pool.submit(info_provider.get_metrics, resource))
         for future in as_completed(futures):
             yield from future.result()
         infos = {}

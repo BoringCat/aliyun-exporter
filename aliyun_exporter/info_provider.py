@@ -51,6 +51,13 @@ class InfoProvider():
         self.client = client
         assert protocol_type in ['http', 'https'], 'protocol_type must be "http" or "https"'
         self.protocol_type = protocol_type
+        self.infos = set()
+
+    def append_info(self, info_name):
+        self.infos.add(info_name)
+
+    def has(self, info_name):
+        return info_name in self.infos
 
     @cached(cache)
     def get_metrics(self, resource: str) -> dict:

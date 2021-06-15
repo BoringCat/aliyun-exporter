@@ -103,8 +103,7 @@ protocol_type: https # 请求协议（内网建议http）
 credential:
   access_key_id: <YOUR_ACCESS_KEY_ID> # 必填
   access_key_secret: <YOUR_ACCESS_KEY_SECRET> # 必填
-  region_ids: 
-    - <REGION_ID> # 默认值: 'cn-hangzhou'，只用于info获取，QueryMetricLast接口貌似与区域无关
+  entrypoint: <REGION_ID> # 默认值: 'cn-hangzhou'，仅用于选择请求入口，不影响监控获取
   
 metrics: # 目标指标配置
   acs_cdn: # 必填，云监控中定义的 Project 名字
@@ -114,13 +113,27 @@ metrics: # 目标指标配置
     measure: Average # 选填，响应体中的指标值字段名，默认 'Average'
 
 info_metrics: # 云实例对象信息配置，目前只支持获取这些云产品的信息
-  - ecs
-  - rds
-  - slb
-  - elasticsearch
-  - logstash
-  - redis
-  - -mongodb
+  ecs:
+    region_ids:
+      - <REGION_ID1>    # 云实例对象所在的区域
+  rds:
+    region_ids:
+      - <REGION_ID1>    # 云实例对象所在的区域
+  slb:
+    region_ids:
+      - <REGION_ID1>    # 云实例对象所在的区域
+  elasticsearch:
+    region_ids:
+      - <REGION_ID1>    # 云实例对象所在的区域
+  logstash:
+    region_ids:
+      - <REGION_ID1>    # 云实例对象所在的区域
+  redis:
+    region_ids:
+      - <REGION_ID1>    # 云实例对象所在的区域
+  mongodb:
+    region_ids:
+      - <REGION_ID1>    # 云实例对象所在的区域
 ```
 
 提示：
