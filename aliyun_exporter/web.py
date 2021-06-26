@@ -5,6 +5,7 @@ from flask import (
     Flask, render_template
 )
 from prometheus_client import make_wsgi_app
+from prometheus_client.exposition import generate_latest
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 from . import CollectorConfig
@@ -24,7 +25,7 @@ def create_app(config: CollectorConfig):
     )
 
     @app.route("/")
-    def projectIndex():
+    def projectIndex(path = None):
         req = QueryProjectMetaRequest()
         req.set_PageSize(100)
         try:
@@ -61,8 +62,7 @@ def create_app(config: CollectorConfig):
     app.jinja_env.filters['formatmetric'] = format_metric
     app.jinja_env.filters['formatperiod'] = format_period
 
-    app.wsgi_app = DispatcherMiddleware(app, {
+    return DispatcherMiddleware(app, {
         '/metrics': make_wsgi_app()
     })
 
-    return app

@@ -14,7 +14,7 @@ from ratelimit import limits, sleep_and_retry
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .info_provider import InfoProvider
-from .utils import try_or_else, requestHistogram
+from .utils import try_or_else, requestHistogram, mapInfoByKeys
 
 rds_performance = 'rds_performance'
 special_namespaces = {
@@ -98,6 +98,7 @@ class AliyunCollector(object):
                 self.special_collectors[k] = v(self)
         self.cache_metrics = config.cache_metrics
         self.cache_metric_func = {}
+        self.cache_ext_lables = {}
 
     def _create_cache_method(self, namespace:str, maxsize:int = 3600, period:int = 60):
         @cached(cache=TTLCache(maxsize=maxsize, ttl=max(5, period - 10)))
@@ -140,7 +141,7 @@ class AliyunCollector(object):
     def format_metric_name(self, namespace, name):
         return 'aliyun_{}_{}'.format(namespace, name)
 
-    def metric_generator(self, namespace, metric):
+    def metric_generator(self, namespace, metric, info_keymap = {}, info = None, ext_keys = []):
         if 'name' not in metric:
             raise Exception('name must be set in metric item.')
         name = metric['name']
@@ -164,7 +165,18 @@ class AliyunCollector(object):
             return (metric_up_gauge(self.format_metric_name(namespace, name), False),)
         if len(points) < 1:
             return (metric_up_gauge(self.format_metric_name(namespace, name), False),)
-        label_keys = self.parse_label_keys(points[0])
+        point_keys = self.parse_label_keys(points[0])
+        label_keys = []
+        label_keys.extend(point_keys)
+        ext_lables = self.cache_ext_lables.get('_'.join([namespace, metric_name]), None)
+        if not ext_lables and (info and ext_keys and info_keymap):
+            for ek in ext_keys:
+                if isinstance(ek, dict):
+                    label_keys.extend(ek.values())
+                else:
+                    label_keys.append(ek)
+            ext_lables = mapInfoByKeys(list(filter(bool,map(lambda x:info_keymap.get(x, None), point_keys))), info, ext_keys)
+            self.cache_ext_lables['_'.join([namespace, metric_name])] = ext_lables
         gauge = GaugeMetricFamily(self.format_metric_name(namespace, name), '', labels=label_keys)
         for point in points:
             if measure not in point:
@@ -172,34 +184,50 @@ class AliyunCollector(object):
             timestamp = point.get('timestamp', None)
             if isinstance(timestamp, (int, float)):
                 timestamp = timestamp / 1000
-            gauge.add_metric([try_or_else(lambda: str(point[k]), '') for k in label_keys], point[measure], timestamp=timestamp)
+            point_labels = [try_or_else(lambda: str(point[k]), '') for k in point_keys]
+            if info and ext_keys and info_keymap:
+                map_labels = [try_or_else(lambda: str(point[k]), '') for k in point_keys if k in info_keymap.keys()]
+                point_labels.extend(ext_lables.get(','.join(map_labels), []))
+            gauge.add_metric(point_labels, point[measure], timestamp=timestamp)
         return (gauge, metric_up_gauge(self.format_metric_name(namespace, name), True))
 
     def collect(self):
         futures = []
         info_futures = []
-        for namespace in self.metrics:
-            if namespace in special_namespaces:
-                futures.append(self.pool.submit(self.special_collectors[namespace].collect))
-                continue
-            for metric in self.metrics[namespace]:
-                futures.append(self.pool.submit(self.metric_generator, namespace, metric))
         if self.info_metrics != None:
             for resource in self.info_metrics.keys():
                 for info_provider in self.info_providers.values():
                     if info_provider.has(resource):
                         info_futures.append(self.pool.submit(info_provider.get_metrics, resource))
-        for future in as_completed(futures):
-            yield from future.result()
         infos = {}
         for future in as_completed(info_futures):
             d = future.result()
             if not d['labels']:
                 continue
-            i = infos.get(d['name'],InfoMetricFamily(d['name'], d['desc'], labels=d['labels']))
+            i = infos.get(d['name'],InfoMetricFamily('aliyun_meta_'+d['name'], d['desc'], labels=d['labels']))
             for info in d['infos']:
                 i.add_metric([], info)
             infos[d['name']] = i
+        for namespace in self.metrics:
+            if namespace in special_namespaces:
+                futures.append(self.pool.submit(self.special_collectors[namespace].collect))
+                continue
+            metrics = self.metrics[namespace].get('metrics', [])
+            extra_labels = self.metrics[namespace].get('extra_labels', {})
+            fromInfo = None
+            labels = None
+            keys = None
+            if extra_labels:
+                fromInfo = extra_labels.get('fromInfo', None)
+                labels = extra_labels.get('labels', [])
+                keys = extra_labels.get('keys', {})
+            for metric in metrics:
+                if fromInfo and labels and keys:
+                    futures.append(self.pool.submit(self.metric_generator, namespace, metric, keys, infos[fromInfo], labels))
+                else:
+                    futures.append(self.pool.submit(self.metric_generator, namespace, metric))
+        for future in as_completed(futures):
+            yield from future.result()
         yield from infos.values()
 
 

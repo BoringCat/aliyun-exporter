@@ -58,8 +58,19 @@ credential:
   region_id: <REGION_ID>
 
 metrics:
-  acs_cdn:
-  - name: QPS
+  acs_ecs_dashboard:
+    extra_labels:
+      fromInfo: ecs
+      keys:
+        instanceId: InstanceId
+      labels:
+        - InstanceName
+        - VpcAttributes: InternalIp
+    metrics:
+      - name: VPC_PublicIP_InternetInRate
+      - name: VPC_PublicIP_InternetOutRate
+      - name: IntranetInRate
+      - name: IntranetOutRate
   acs_mongodb:
   - name: CPUUtilization
     period: 300
@@ -106,11 +117,19 @@ credential:
   entrypoint: <REGION_ID> # 默认值: 'cn-hangzhou'，仅用于选择请求入口，不影响监控获取
   
 metrics: # 目标指标配置
-  acs_cdn: # 必填，云监控中定义的 Project 名字
-  - name: QPS # 必填, 云监控中定义的指标名字
-    rename: qps # 选填，定义对应的 Prometheus 指标名字，默认与云监控指标名字一致
-    period: 60 # 选填，默认 60
-    measure: Average # 选填，响应体中的指标值字段名，默认 'Average'
+  acs_ecs_dashboard: # 必填，云监控中定义的 Project 名字
+    extra_labels:   # 选填，为获取的监控指标追加而外的labels
+      fromInfo: ecs # 必填，从哪个info指标中获取labels
+      keys:         # 必填，监控指标的维度 与 info中的label对应关系，用于匹配资源
+        instanceId: InstanceId
+      labels:       # 必填，追加到监控指标中的labels，可以使用map重命名
+        - InstanceName
+        - VpcAttributes: InternalIp
+    metrics: # 必填，要拉取的监控项配置
+      - name: VPC_PublicIP_InternetInRate # 必填, 云监控中定义的指标名字
+        rename: InternetInRate # 选填，定义对应的 Prometheus 指标名字，默认与云监控指标名字一致
+        period: 60 # 选填，默认 60
+        measure: Average # 选填，响应体中的指标值字段名，默认 'Average'
 
 info_metrics: # 云实例对象信息配置，目前只支持获取这些云产品的信息
   ecs:

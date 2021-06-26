@@ -30,8 +30,6 @@ def main():
                         help='exporter exposed host(default: "")')
     parser.add_argument('-p', '--port', default=[], action='append',
                         help='exporter exposed port(default: 9525)')
-    parser.add_argument('-d', '--debug', default=False, action='store_true',
-                        help='run exporter in debug mode')
     args = parser.parse_args()
 
     with open(args.config_file, 'r') as config_file:
@@ -53,7 +51,7 @@ def main():
         ports = args.port
 
     try:
-        createHttpServer(hosts, ports, app, args.debug)
+        createHttpServer(hosts, ports, app)
     except KeyboardInterrupt:
         pass
 

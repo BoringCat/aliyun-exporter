@@ -1,7 +1,7 @@
 import sys
 import logging
 from traceback import format_exc
-from prometheus_client import Histogram
+from prometheus_client import Histogram, Metric
 
 def format_metric(text: str):
     return text.replace('.', '_')
@@ -17,6 +17,19 @@ def try_or_else(op, default):
     except:
         return default
 
+def mapInfoByKeys(point_labels:list, info:Metric, ext_labels:list):
+    resp = {}
+    for sample in info.samples:
+        mapKey = ','.join(map(lambda x:sample.labels.get(x, ''), point_labels))
+        mapValue = []
+        for el in ext_labels:
+            if isinstance(el, dict):
+                mapValue.extend(map(lambda x:sample.labels.get(x, ''), el.keys()))
+            else:
+                mapValue.append(sample.labels.get(el, ''))
+        resp[mapKey] = mapValue
+    return resp
+
 requestHistogram = Histogram(
     'cloudmonitor_request', 'CloudMonitor request latency', ['namespace', 'limiter'],
     buckets=(.1, .25, .5, .75, 1, 2.5, float('inf'))
@@ -27,10 +40,7 @@ def _getListens(hosts, ports):
         for p in ports:
             yield (h, int(p))
 
-def createHttpServer(hosts, ports, app, debug):
-    if debug:
-        app.run(host=hosts[0], port=int(ports[0]), debug=debug)
-        return
+def createHttpServer(hosts, ports, app):
     from tornado.wsgi import WSGIContainer
     from tornado.httpserver import HTTPServer
     from tornado.ioloop import IOLoop
